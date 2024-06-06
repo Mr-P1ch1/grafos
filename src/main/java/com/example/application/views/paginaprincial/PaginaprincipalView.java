@@ -2,10 +2,10 @@ package com.example.application.views.paginaprincial;
 
 import com.example.application.views.MainLayout;
 import com.vaadin.flow.component.Composite;
-import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H4;
+import com.vaadin.flow.component.html.H6;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -15,197 +15,293 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.RouteAlias;
-import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.dialog.Dialog;
-import java.awt.*;
+import com.vaadin.flow.component.html.Label;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.PriorityQueue;
 import java.util.stream.Collectors;
 
 @PageTitle("Página Principal")
 @Route(value = "paginaprincipal", layout = MainLayout.class)
 @RouteAlias(value = "", layout = MainLayout.class)
 public class PaginaprincipalView extends Composite<VerticalLayout> {
-    private final long INF = Long.MAX_VALUE / 2; // Use a practical infinite value for path calculations
-    private List<Node> nodes = new ArrayList<>();
-    private long[][] mAdy; // Adjacency matrix
-    private Grid<Node> grid;
-    private Select<String> startSelect, endSelect;
-    private TextField nameField;
+    private List<Nodo> nodos = new ArrayList<>();
+    private long[][] mAdy; // Matriz de adyacencia
+    private Grid<Nodo> grid;
+    private Select<String> selectInicio, selectFinal;
+    private TextField nombreField;
     private NumberField xField, yField;
 
     public PaginaprincipalView() {
-        setupUI();
+        configurarUI();
     }
 
-    private void setupUI() {
-        VerticalLayout content = getContent();
-        content.setSizeFull();
+    private void configurarUI() {
+        VerticalLayout contenido = getContent();
+        contenido.setSizeFull();
 
+        // Título
+        H6 titulo = new H6("Integrantes: Alejandro Paqui, Naomi Lizano y Camila Torres");
+        contenido.add(titulo);
+
+        // Encabezado
         H4 header = new H4("Cálculo de ruta pasando por al menos dos puntos intermedios");
-        content.add(header);
+        contenido.add(header);
 
-        nameField = new TextField("Nombre del Nodo");
+        // Campos de entrada
+        nombreField = new TextField("Nombre del Nodo");
         xField = new NumberField("Coordenada X");
         yField = new NumberField("Coordenada Y");
-        Button addNodeButton = new Button("Agregar Nodo", e -> addNode());
-        startSelect = new Select<>();
-        startSelect.setLabel("Nodo de inicio");
-        endSelect = new Select<>();
-        endSelect.setLabel("Nodo final");
-        Button calculateButton = new Button("Calcular Ruta", e -> calculateRoute());
+        Button addNodeButton = new Button("Agregar Nodo", e -> agregarNodo());
 
-        content.add(nameField, xField, yField, addNodeButton, startSelect, endSelect, calculateButton);
+        // Selectores de nodo de inicio y final
+        selectInicio = new Select<>();
+        selectInicio.setLabel("Nodo de inicio");
+        selectFinal = new Select<>();
+        selectFinal.setLabel("Nodo final");
+        Button calculateButton = new Button("Calcular Ruta", e -> calcularRuta());
 
-        grid = new Grid<>(Node.class);
-        grid.addColumn(Node::getName).setHeader("Nombre");
-        grid.addColumn(Node::getX).setHeader("Coordenada X");
-        grid.addColumn(Node::getY).setHeader("Coordenada Y");
-        content.add(grid);
+        // Añadir componentes al layout
+        contenido.add(nombreField, xField, yField, addNodeButton, selectInicio, selectFinal, calculateButton);
+
+        // Configuración del Grid para mostrar los nodos
+        grid = new Grid<>(Nodo.class);
+        grid.addColumn(Nodo::getNombre).setHeader("Nombre");
+        grid.addColumn(Nodo::getX).setHeader("Coordenada X");
+        grid.addColumn(Nodo::getY).setHeader("Coordenada Y");
+        grid.setHeight("300px");
+
+        // Crear un contenedor que permita el scroll para el Grid
+        VerticalLayout gridContainer = new VerticalLayout(grid);
+        gridContainer.setSizeFull();
+        gridContainer.setPadding(false);
+        gridContainer.setSpacing(false);
+        gridContainer.getStyle().set("overflow", "auto");
+
+        contenido.add(gridContainer);
+        contenido.setFlexGrow(1, gridContainer);
     }
 
-    private void addNode() {
-        String name = nameField.getValue();
+    private void agregarNodo() {
+        String nombre = nombreField.getValue();
         Double x = xField.getValue();
         Double y = yField.getValue();
-        if (name.isEmpty() || x == null || y == null) {
+        if (nombre.isEmpty() || x == null || y == null) {
             Notification.show("Todos los campos son necesarios.", 3000, Notification.Position.MIDDLE);
             return;
         }
-        Node newNode = new Node(name, x, y);
-        nodes.add(newNode);
-        updateAdjacencyMatrix();
-        startSelect.setItems(nodes.stream().map(Node::getName).collect(Collectors.toList()));
-        endSelect.setItems(nodes.stream().map(Node::getName).collect(Collectors.toList()));
-        grid.setItems(nodes);
+        Nodo nuevoNodo = new Nodo(nombre, x, y);
+        nodos.add(nuevoNodo);
+        actualizarMatrizAdyacencia();
+        actualizarSelectores();
+        grid.setItems(nodos); // Actualizar items del Grid
     }
 
-    private void updateAdjacencyMatrix() {
-        int size = nodes.size();
+    private void actualizarMatrizAdyacencia() {
+        int size = nodos.size();
         mAdy = new long[size][size];
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
                 if (i == j) {
                     mAdy[i][j] = 0;
                 } else {
-                    Node node1 = nodes.get(i);
-                    Node node2 = nodes.get(j);
-                    mAdy[i][j] = (long) Math.sqrt(Math.pow(node1.getX() - node2.getX(), 2) + Math.pow(node1.getY() - node2.getY(), 2));
+                    Nodo nodo1 = nodos.get(i);
+                    Nodo nodo2 = nodos.get(j);
+                    mAdy[i][j] = (long) Math.sqrt(Math.pow(nodo1.getX() - nodo2.getX(), 2) + Math.pow(nodo1.getY() - nodo2.getY(), 2));
                 }
             }
         }
     }
 
-    private void calculateRoute() {
-        if (nodes.size() < 4) {
+    private void actualizarSelectores() {
+        selectInicio.setItems(nodos.stream().map(Nodo::getNombre).collect(Collectors.toList()));
+        selectFinal.setItems(nodos.stream().map(Nodo::getNombre).collect(Collectors.toList()));
+    }
+
+    private void calcularRuta() {
+        if (nodos.size() < 4) {
             Notification.show("Debe haber al menos cuatro nodos para garantizar dos puntos intermedios.", 5000, Notification.Position.MIDDLE);
             return;
         }
-        String result = algoritmoFloyd(mAdy);
-        showResultsInDialog(result);
+        String nombreInicio = selectInicio.getValue();
+        String nombreFinal = selectFinal.getValue();
+        if (nombreInicio == null || nombreFinal == null) {
+            Notification.show("Debe seleccionar tanto el nodo de inicio como el nodo final.", 3000, Notification.Position.MIDDLE);
+            return;
+        }
+        int indiceInicio = encontrarIndicePorNombre(nombreInicio);
+        int indiceFinal = encontrarIndicePorNombre(nombreFinal);
+        if (indiceInicio == -1 || indiceFinal == -1) {
+            Notification.show("Nodos seleccionados no válidos.", 3000, Notification.Position.MIDDLE);
+            return;
+        }
+        String resultado = encontrarRutaConDijkstra(indiceInicio, indiceFinal);
+        mostrarResultadosEnDialogo(resultado);
     }
-    private void showResultsInDialog(String htmlContent) {
-        Dialog dialog = new Dialog();
-        dialog.setWidth("800px");
-        dialog.setHeight("600px");
 
-        Html content = new Html(htmlContent);
-        VerticalLayout layout = new VerticalLayout(content);
+    private int encontrarIndicePorNombre(String nombre) {
+        for (int i = 0; i < nodos.size(); i++) {
+            if (nodos.get(i).getNombre().equals(nombre)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String encontrarRutaConDijkstra(int inicio, int fin) {
+        List<Integer> rutaMasCorta = null;
+        long distanciaMasCorta = Long.MAX_VALUE;
+
+        // Intentar cada par de nodos intermedios
+        for (int i = 0; i < nodos.size(); i++) {
+            if (i == inicio || i == fin) continue;
+            for (int j = i + 1; j < nodos.size(); j++) {
+                if (j == inicio || j == fin) continue;
+
+                List<Integer> ruta1 = dijkstra(inicio, i);
+                List<Integer> ruta2 = dijkstra(i, j);
+                List<Integer> ruta3 = dijkstra(j, fin);
+
+                if (ruta1 != null && ruta2 != null && ruta3 != null) {
+                    List<Integer> rutaCombinada = new ArrayList<>();
+                    rutaCombinada.addAll(ruta1);
+                    rutaCombinada.remove(rutaCombinada.size() - 1); // Eliminar nodo duplicado
+                    rutaCombinada.addAll(ruta2);
+                    rutaCombinada.remove(rutaCombinada.size() - 1); // Eliminar nodo duplicado
+                    rutaCombinada.addAll(ruta3);
+
+                    long distancia = calcularDistanciaRuta(rutaCombinada);
+                    if (distancia < distanciaMasCorta) {
+                        distanciaMasCorta = distancia;
+                        rutaMasCorta = rutaCombinada;
+                    }
+                }
+            }
+        }
+
+        if (rutaMasCorta == null) {
+            return "No hay ruta disponible que pase por al menos dos nodos intermedios.";
+        }
+        return formatearResultado(distanciaMasCorta, rutaMasCorta);
+    }
+
+    private List<Integer> dijkstra(int inicio, int fin) {
+        int vertices = mAdy.length;
+        long[] dist = new long[vertices];
+        boolean[] visitado = new boolean[vertices];
+        int[] prev = new int[vertices];
+
+        for (int i = 0; i < vertices; i++) {
+            dist[i] = Long.MAX_VALUE;
+            prev[i] = -1;
+        }
+        dist[inicio] = 0;
+
+        PriorityQueue<DistanciaNodo> queue = new PriorityQueue<>();
+        queue.add(new DistanciaNodo(inicio, 0));
+
+        while (!queue.isEmpty()) {
+            DistanciaNodo current = queue.poll();
+            int u = current.nodo;
+            if (visitado[u]) continue;
+            visitado[u] = true;
+
+            for (int v = 0; v < vertices; v++) {
+                if (mAdy[u][v] != 0 && !visitado[v]) {
+                    long nuevaDist = dist[u] + mAdy[u][v];
+                    if (nuevaDist < dist[v]) {
+                        dist[v] = nuevaDist;
+                        prev[v] = u;
+                        queue.add(new DistanciaNodo(v, nuevaDist));
+                    }
+                }
+            }
+        }
+
+        List<Integer> ruta = reconstruirRuta(prev, inicio, fin);
+        return ruta.size() > 1 ? ruta : null;
+    }
+
+    private List<Integer> reconstruirRuta(int[] prev, int inicio, int fin) {
+        List<Integer> ruta = new ArrayList<>();
+        for (int at = fin; at != -1; at = prev[at]) {
+            ruta.add(0, at);
+        }
+        if (ruta.get(0) != inicio) {
+            ruta.clear(); // Limpiar la ruta si no comienza con el nodo inicial
+        }
+        return ruta;
+    }
+
+    private long calcularDistanciaRuta(List<Integer> ruta) {
+        long distancia = 0;
+        for (int i = 0; i < ruta.size() - 1; i++) {
+            distancia += mAdy[ruta.get(i)][ruta.get(i + 1)];
+        }
+        return distancia;
+    }
+
+    private String formatearResultado(long distancia, List<Integer> ruta) {
+        StringBuilder resultado = new StringBuilder("<div><b>Resultado de la ruta:</b><br>");
+        resultado.append("Distancia total: ").append(distancia).append("<br>");
+        resultado.append("Ruta: ");
+        for (int i = 0; i < ruta.size(); i++) {
+            resultado.append(nodos.get(ruta.get(i)).getNombre());
+            if (i < ruta.size() - 1) {
+                resultado.append(" -> ");
+            }
+        }
+        resultado.append("</div>");
+        return resultado.toString();
+    }
+
+    private void mostrarResultadosEnDialogo(String contenidoHtml) {
+        Dialog dialogo = new Dialog();
+        dialogo.setWidth("800px");
+        dialogo.setHeight("600px");
+
+        Label etiquetaResultado = new Label();
+        etiquetaResultado.getElement().setProperty("innerHTML", contenidoHtml);
+        etiquetaResultado.setSizeFull();
+
+        Button botonCerrar = new Button("Cerrar", event -> dialogo.close());
+        botonCerrar.getStyle().set("margin-top", "20px");
+
+        VerticalLayout layout = new VerticalLayout(etiquetaResultado, botonCerrar);
         layout.setAlignItems(FlexComponent.Alignment.CENTER);
 
-        Button closeButton = new Button("Cerrar", event -> dialog.close());
-        layout.add(closeButton);
-
-        dialog.add(layout);
-        dialog.open();
+        dialogo.add(layout);
+        dialogo.open();
     }
 
+    private static class DistanciaNodo implements Comparable<DistanciaNodo> {
+        int nodo;
+        long distancia;
 
-
-    private String algoritmoFloyd(long [][] mAdy) {
-        int vertices = mAdy.length;
-        long[][] dist = new long[vertices][vertices];
-        String[][] paths = new String[vertices][vertices];
-
-        for (int i = 0; i < vertices; i++) {
-            for (int j = 0; j < vertices; j++) {
-                dist[i][j] = mAdy[i][j];
-                if (mAdy[i][j] != INF) {
-                    paths[i][j] = Integer.toString(j + 1);
-                } else {
-                    paths[i][j] = "";
-                }
-            }
+        DistanciaNodo(int nodo, long distancia) {
+            this.nodo = nodo;
+            this.distancia = distancia;
         }
 
-        for (int k = 0; k < vertices; k++) {
-            for (int i = 0; i < vertices; i++) {
-                for (int j = 0; j < vertices; j++) {
-                    if (dist[i][k] + dist[k][j] < dist[i][j]) {
-                        dist[i][j] = dist[i][k] + dist[k][j];
-                        paths[i][j] = paths[i][k] + " -> " + paths[k][j];
-                    }
-                }
-            }
+        @Override
+        public int compareTo(DistanciaNodo otro) {
+            return Long.compare(this.distancia, otro.distancia);
         }
-
-        return formatResult(dist, paths, vertices);
     }
 
-    private String formatResult(long[][] dist, String[][] paths, int vertices) {
-        StringBuilder result = new StringBuilder("<div><b>Resultados de rutas:</b><br>");
-        for (int i = 0; i < vertices; i++) {
-            for (int j = 0; j < vertices; j++) {
-                if (i != j && dist[i][j] != INF) {
-                    List<Integer> path = reconstructPath(i, j, paths);
-                    // Asegurar que el camino tiene al menos dos nodos intermedios
-                    if (path.size() > 3) { // path incluye el inicio y el final
-                        result.append(String.format("Del nodo %d al nodo %d, pasando por [%s], con un costo total de %d.<br>",
-                                i + 1, j + 1, pathToString(path.subList(1, path.size() - 1)), dist[i][j])); // Omitimos el nodo de inicio y final en la lista
-                    }
-                }
-            }
-        }
-        result.append("</div>");
-        return result.toString();
-    }
-
-
-
-    private List<Integer> reconstructPath(int start, int end, String[][] paths) {
-        List<Integer> path = new ArrayList<>();
-        String route = paths[start][end];
-        if (route != null && !route.isEmpty()) {
-            for (String step : route.split(" -> ")) {
-                if (!step.isEmpty()) {
-                    path.add(Integer.parseInt(step.trim()));
-                }
-            }
-        }
-        return path;
-    }
-
-    private String pathToString(List<Integer> path) {
-        if (path.isEmpty() || path.size() < 3) {
-            return "directamente"; // Para mantener coherencia, aunque no se mostrarán estas rutas
-        }
-        // Formatear la cadena omitiendo el primer y último elemento
-        return path.subList(1, path.size() - 1).stream()
-                .map(Object::toString)
-                .collect(Collectors.joining(", "));
-    }
-
-    public class Node {
-        private String name;
+    public static class Nodo {
+        private String nombre;
         private double x, y;
 
-        public Node(String name, double x, double y) {
-            this.name = name;
+        public Nodo(String nombre, double x, double y) {
+            this.nombre = nombre;
             this.x = x;
             this.y = y;
         }
 
-        public String getName() { return name; }
+        public String getNombre() { return nombre; }
         public double getX() { return x; }
         public double getY() { return y; }
     }
